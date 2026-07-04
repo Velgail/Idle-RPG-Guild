@@ -18,10 +18,20 @@ export const CONFIG = {
   },
 
   // ダンジョン挙動プリセット（魔王の応答表が指すもの）
+  // monster: 魔王のモンスター構成ノブ(D-13)。resist=半減属性 / threat=脅威型(burst 要壁 / status 要回復)
   presets: {
-    normal: { id: 'normal', label: '通常', diffBase: 1.0, deepBias: 0.0, reward: 1.0 },
-    deepen: { id: 'deepen', label: '深層強化', diffBase: 1.0, deepBias: 1.2, reward: 1.1 },
-    ease: { id: 'ease', label: '緩和・誘引', diffBase: 0.75, deepBias: 0.0, reward: 1.25 },
+    normal: { id: 'normal', label: '通常', diffBase: 1.0, deepBias: 0.0, reward: 1.0, monster: { resist: 'none', threat: 'none' } },
+    deepen: { id: 'deepen', label: '深層強化', diffBase: 1.0, deepBias: 1.2, reward: 1.1, monster: { resist: 'phys', threat: 'burst' } },
+    ease: { id: 'ease', label: '緩和・誘引', diffBase: 0.75, deepBias: 0.0, reward: 1.25, monster: { resist: 'none', threat: 'none' } },
+  },
+
+  party: {
+    maxSize: 4,
+    diffScale: 2.6, // フロア難度に掛ける“パーティ基準”係数（4人編成前提の調整）
+    threatPenalty: 1.4, // 要求ロール欠けの脅威で難度が上がる倍率
+    stallDaysToJobChange: 3, // このフロアで前進できない日が続くと転職を検討
+    amicableLevel: 8, // 平均これ以上＆資金十分で円満解散（引退）
+    disbandMoraleFloor: 0.12, // 平均士気がこれ未満で解散
   },
 
   economy: {

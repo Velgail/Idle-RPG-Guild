@@ -34,11 +34,16 @@ console.log('--- headless sim check ---');
 {
   const s = run(12345, 30);
   console.log(`  day=${s.time.day} clear=${s.gauges.clear.toFixed(1)} flux=${s.gauges.flux.toFixed(2)} rep=${s.gauges.reputation.toFixed(2)} treasury=${s.economy.treasury.toFixed(1)} alive=${countAlive(s)} over=${s.over || '継続'}`);
+  console.log(`  parties=${s.parties.list.length} stats:`, JSON.stringify(s.stats));
   assert(Number.isFinite(s.gauges.clear) && s.gauges.clear >= 0 && s.gauges.clear <= 100, 'clear は 0..100');
   assert(Number.isFinite(s.gauges.flux) && s.gauges.flux >= 0 && s.gauges.flux <= 1, 'flux は 0..1');
   assert(Number.isFinite(s.economy.treasury), 'treasury は有限');
   assert(s.time.day >= 1, '少なくとも1日は進む');
   assert(s.stats.delves > 0, '潜行イベントが発生する');
+  assert(s.stats.formed > 0, 'パーティが自発編成される (D-31)');
+  // 個体は必ず class と traits を持つ（構造化モデル）
+  const sample = s.population.adventurers[0];
+  assert(sample && sample.classId && sample.traits, '冒険者は class と traits を持つ');
 }
 
 // 2) 決定論：同じ seed は同じ結果

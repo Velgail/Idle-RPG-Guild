@@ -1,155 +1,153 @@
-// 世界のシミュレーション（1tick）：冒険者の潜行・成長・生死、人口フロー。
+// 世界のシミュレーション（1tick）：パーティ潜行・成長・生死、人口フロー。
 import { CONFIG } from './config.js';
-import { makeAdventurer, logEvent } from './state.js';
-import { countAlive } from './gambit.js';
+import { makeAdventurer, logEvent, partyMembers } from './state.js';
+import { classOf } from './classes.js';
+import { partyPower, effectiveDifficulty, floorDifficulty, partyRoles } from './dungeon.js';
 
-// あるフロアの難度。プリセットで深層バイアスが乗る。
-// depth=1 で約 1.0（Lv1 が越えられる）、深層で急峻に。
-function floorDifficulty(state, depth) {
-  const p = state.dungeon.preset;
-  const deep = depth >= 6 ? p.deepBias * (depth - 5) : 0;
-  return depth * p.diffBase + deep;
+function countAliveAll(state) {
+  let n = 0;
+  for (const a of state.population.adventurers) if (a.alive) n++;
+  return n;
 }
 
-// 1tick 分の世界更新。income（この tick の手数料収入）を返す。
+// 1tick 分の世界更新。fee（この tick の手数料収入）を返す。
 export function simTick(state) {
   const rng = state.rng;
   const pop = state.population;
+  const floors = state.dungeon.floors;
   let fee = 0;
-  let delveEvents = 0;
+  let memberDelves = 0;
 
-  // --- 流入（評判＝旨味に比例、softCap で鈍化）---
-  const alive = countAlive(state);
-  const capFactor = Math.max(0, 1 - alive / CONFIG.population.softCap);
+  // --- 流入（評判＝旨味に比例、softCap で鈍化）→ 自由な冒険者として加入 ---
+  const aliveCount = countAliveAll(state);
+  const capFactor = Math.max(0, 1 - aliveCount / CONFIG.population.softCap);
   pop.inflowAccum += CONFIG.population.inflowBase * (0.4 + state.gauges.reputation) * capFactor;
   while (pop.inflowAccum >= 1) {
     pop.inflowAccum -= 1;
-    const a = makeAdventurer(rng, pop.nextId++);
-    pop.adventurers.push(a);
+    pop.adventurers.push(makeAdventurer(rng, pop.nextId++));
     state.stats.inflow++;
   }
 
-  // --- 各冒険者の行動 ---
-  const floors = state.dungeon.floors;
-  for (const a of pop.adventurers) {
-    if (!a.alive) continue;
+  // --- 各パーティの潜行 ---
+  for (const party of state.parties.list) {
+    if (!party.alive) continue;
+    const members = partyMembers(state, party);
+    if (members.length === 0) continue;
 
-    // 低HPは休養（自己保存）：潜らず回復。
-    if (a.hp < a.maxHp * 0.4) {
-      a.hp = Math.min(a.maxHp, a.hp + 4);
-      a.morale = Math.max(0, a.morale - 0.01);
-      continue;
+    // 回復役がいれば毎tick少し回復
+    const roles = partyRoles(state, party);
+    if (roles.has('heal')) {
+      for (const m of members) m.hp = Math.min(m.maxHp, m.hp + 1.5);
     }
 
-    const pushTarget = a.floor + 1;
-    // 期待実力(平均 1.15×level)が難度に届いて初めて前進を試みる。
-    // 届かないうちは撤退して安全フロアで稼ぐ（自滅を防ぎ、強者だけが突破する）。
-    const canPush =
-      pushTarget <= floors && a.level * 1.15 >= floorDifficulty(state, pushTarget);
+    const power = partyPower(state, party);
+    const target = party.floor + 1;
+    const canPush = target <= floors && power >= effectiveDifficulty(state, party, target);
 
-    delveEvents++;
+    memberDelves += members.length;
     state.stats.delves++;
-    const power = a.level * (0.9 + 0.5 * rng());
+    const roll = 0.75 + 0.5 * rng();
 
     if (canPush) {
-      // 前進を試みる
-      const diff = floorDifficulty(state, pushTarget);
-      if (power >= diff) {
-        a.floor = pushTarget;
-        const reward = (1.5 + pushTarget * 1.2) * state.dungeon.preset.reward;
-        a.gold += reward;
+      const effDiff = effectiveDifficulty(state, party, target);
+      if (power * roll >= effDiff) {
+        // 前進成功
+        party.floor = target;
+        const reward = (1.5 + target * 1.2) * state.dungeon.preset.reward;
         fee += reward * CONFIG.economy.feeRate;
-        a.level += 0.12;
-        a.morale = Math.min(1, a.morale + 0.05);
-        a.hp = Math.min(a.maxHp, a.hp + 2);
+        const share = reward / members.length;
+        for (const m of members) {
+          m.gold += share;
+          m.level += 0.11;
+          m.morale = Math.min(1, m.morale + 0.05);
+        }
       } else {
-        const dmg = (diff - power) * 2.2 + 2;
-        a.hp -= dmg;
-        a.morale = Math.max(0, a.morale - 0.06);
-        if (a.hp <= 0) killAdventurer(state, a, pushTarget);
+        applyPartyDamage(state, party, members, (effDiff - power * roll) * 2.0 + 2, target);
       }
-    } else if (a.floor >= 1) {
-      // 撤退して既踏破フロアで安全に稼ぐ（out-level farming）
-      const fd = floorDifficulty(state, a.floor);
-      if (power >= fd) {
-        const reward = (0.8 + a.floor * 0.6) * state.dungeon.preset.reward;
-        a.gold += reward;
+    } else if (party.floor >= 1) {
+      // 撤退して既踏破フロアで稼ぐ（自滅防止・安全収入）
+      const fd = floorDifficulty(state, party.floor) * CONFIG.party.diffScale;
+      if (power * roll >= fd) {
+        const reward = (0.8 + party.floor * 0.6) * state.dungeon.preset.reward;
         fee += reward * CONFIG.economy.feeRate;
-        a.level += 0.05;
-        a.morale = Math.min(1, a.morale + 0.02);
+        const share = reward / members.length;
+        for (const m of members) {
+          m.gold += share;
+          m.level += 0.04;
+          m.morale = Math.min(1, m.morale + 0.02);
+        }
       } else {
-        // 稼ぎ場でも稀に事故る
-        a.hp -= (fd - power) * 1.2 + 1;
-        a.morale = Math.max(0, a.morale - 0.03);
-        if (a.hp <= 0) killAdventurer(state, a, a.floor);
+        applyPartyDamage(state, party, members, (fd - power * roll) * 1.0 + 1, party.floor);
       }
     } else {
-      // 地上（floor 0）でまだ何も踏破していない弱者：フロア1へ挑む
-      const diff = floorDifficulty(state, 1);
-      if (power >= diff) {
-        a.floor = 1;
+      // 地上（まだ何も踏破していない）：フロア1へ挑む
+      const effDiff = effectiveDifficulty(state, party, 1);
+      if (power * roll >= effDiff) {
+        party.floor = 1;
         const reward = 2 * state.dungeon.preset.reward;
-        a.gold += reward;
         fee += reward * CONFIG.economy.feeRate;
-        a.level += 0.1;
+        for (const m of members) {
+          m.gold += reward / members.length;
+          m.level += 0.09;
+        }
       } else {
-        a.hp -= (diff - power) * 2 + 1;
-        a.morale = Math.max(0, a.morale - 0.05);
-        if (a.hp <= 0) killAdventurer(state, a, 1);
+        applyPartyDamage(state, party, members, (effDiff - power * roll) * 1.5 + 1, 1);
       }
     }
   }
 
-  // --- 引退・流出 ---
+  // --- 自由な冒険者（未編成）は待機：軽く回復、長引くと離脱 ---
   for (const a of pop.adventurers) {
-    if (!a.alive) continue;
-    // 引退：十分強く稼いだら去る（世代交代の芽）
-    if (a.level >= 8 && a.gold >= 120 && rng() < 0.03) {
-      a.alive = false;
-      state.stats.retires++;
-      logEvent(state, `${a.name} が引退（Lv${a.level.toFixed(0)}, ${a.gold | 0}G）`);
-      continue;
-    }
-    // 流出：士気が尽きたら旨味なしと見て他所へ
-    if (a.morale <= 0.02 && rng() < 0.06) {
+    if (!a.alive || a.partyId !== null) continue;
+    a.hp = Math.min(a.maxHp, a.hp + 1);
+    a.morale = Math.max(0, a.morale - 0.005);
+    if (a.morale <= 0.02 && rng() < 0.05) {
       a.alive = false;
       state.stats.outflow++;
-      state.gauges.reputation = Math.max(0, state.gauges.reputation - 0.005);
-      continue;
+      state.gauges.reputation = Math.max(0, state.gauges.reputation - 0.004);
     }
   }
 
-  // 死亡・離脱した個体を間引く（配列肥大を防ぐ）
+  // 日の変わり目にだけ配列を掃除（死亡/離脱を除去）
   if (state.time.tick % CONFIG.time.ticksPerDay === 0) {
     pop.adventurers = pop.adventurers.filter((a) => a.alive);
   }
 
-  // --- ゲージ更新 ---
-  updateGauges(state, delveEvents, alive);
-
-  return { fee, delveEvents };
+  updateGauges(state, memberDelves, aliveCount);
+  return { fee };
 }
 
-function killAdventurer(state, a, depth) {
-  a.alive = false;
-  state.stats.deaths++;
-  state.gauges.reputation = Math.max(0, state.gauges.reputation - 0.015);
-  logEvent(state, `${a.name}(Lv${a.level.toFixed(0)}) が F${depth} で死亡`);
+// ダメージは壁役が優先的に受ける（守り）。壁が居なければ最も脆い者へ（burst で事故）。
+function applyPartyDamage(state, party, members, dmg, depth) {
+  let taker = members.find((m) => classOf(m.classId).role === 'tank');
+  if (!taker) {
+    taker = members.slice().sort((a, b) => a.hp - b.hp)[0];
+  }
+  taker.hp -= dmg;
+  taker.morale = Math.max(0, taker.morale - 0.06);
+  for (const m of members) if (m !== taker) m.morale = Math.max(0, m.morale - 0.02);
+  if (taker.hp <= 0) {
+    taker.alive = false;
+    taker.partyId = null;
+    state.stats.deaths++;
+    state.gauges.reputation = Math.max(0, state.gauges.reputation - 0.015);
+    logEvent(state, `${taker.name}(${classOf(taker.classId).label} Lv${taker.level.toFixed(0)}) が F${depth} で死亡`);
+  }
 }
 
-function updateGauges(state, delveEvents, alive) {
-  // 循環：1人あたりの活動量を平滑化
-  const activity = alive > 0 ? Math.min(1, delveEvents / alive) : 0;
+function updateGauges(state, memberDelves, aliveCount) {
+  // 循環：潜行に参加している人口の割合（活動量）を平滑化
+  const activity = aliveCount > 0 ? Math.min(1, memberDelves / aliveCount) : 0;
   const k = CONFIG.gauges.fluxSmoothing;
   state.gauges.flux = state.gauges.flux * (1 - k) + activity * k;
 
-  // 攻略進捗：先頭（最深到達）/ floors
+  // 攻略進捗：先頭パーティ（最深到達）/ floors
   let deepest = 0;
-  for (const a of state.population.adventurers) {
-    if (a.alive && a.floor > deepest) deepest = a.floor;
+  for (const p of state.parties.list) {
+    if (p.alive && p.floor > deepest) deepest = p.floor;
   }
   state.gauges.clear = (deepest / state.dungeon.floors) * 100;
 
-  // 評判：成功が続けば緩やかに回復
-  state.gauges.reputation = Math.min(1, state.gauges.reputation + delveEvents * 0.0006);
+  // 評判：活動が続けば緩やかに回復
+  state.gauges.reputation = Math.min(1, state.gauges.reputation + memberDelves * 0.0004);
 }
