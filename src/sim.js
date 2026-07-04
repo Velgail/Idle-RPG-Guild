@@ -16,12 +16,12 @@ export function simTick(state) {
   const pop = state.population;
   const floors = state.dungeon.floors;
   let fee = 0;
-  let memberDelves = 0;
 
   // --- 流入（評判＝旨味に比例、softCap で鈍化）→ 自由な冒険者として加入 ---
   const aliveCount = countAliveAll(state);
   const capFactor = Math.max(0, 1 - aliveCount / CONFIG.population.softCap);
-  pop.inflowAccum += CONFIG.population.inflowBase * (0.4 + state.gauges.reputation) * capFactor;
+  // 流入は評判（旨味）に敏感：評判が落ちると人が来なくなり人口が萎む → 循環停滞へ。
+  pop.inflowAccum += CONFIG.population.inflowBase * (0.2 + 1.2 * state.gauges.reputation) * capFactor;
   const inflowLevel = CONFIG.population.startLevel + state.time.day * CONFIG.population.inflowLevelCreep;
   while (pop.inflowAccum >= 1) {
     pop.inflowAccum -= 1;
@@ -46,7 +46,6 @@ export function simTick(state) {
     // 遠征は時間がかかる：1日に前進できるのは1フロアまで（制御が追いつく速度に律速）。
     const canPush = !party.advancedToday && target <= floors && power >= effectiveDifficulty(state, party, target);
 
-    memberDelves += members.length;
     state.stats.delves++;
     const roll = 0.75 + 0.5 * rng();
 
@@ -64,6 +63,8 @@ export function simTick(state) {
           m.level += 0.11;
           m.morale = Math.min(1, m.morale + 0.05);
         }
+        // フロンティア突破は旨味（評判）を高める
+        state.gauges.reputation = Math.min(1, state.gauges.reputation + 0.006);
       } else {
         applyPartyDamage(state, party, members, (effDiff - power * roll) * 2.0 + 2, target);
       }
@@ -116,41 +117,47 @@ export function simTick(state) {
     pop.adventurers = pop.adventurers.filter((a) => a.alive);
   }
 
-  updateGauges(state, memberDelves, aliveCount);
+  updateClear(state);
   return { fee };
 }
 
-// ダメージは壁役が優先的に受ける（守り）。壁が居なければ最も脆い者へ（burst で事故）。
+// ダメージ配分。burst 脅威（深層強化）はパーティ全体を削る＝全滅の危険。
+// 平時は壁役が優先的に受ける（守り）。壁が居なければ最も脆い者へ。
 function applyPartyDamage(state, party, members, dmg, depth) {
-  let taker = members.find((m) => classOf(m.classId).role === 'tank');
-  if (!taker) {
-    taker = members.slice().sort((a, b) => a.hp - b.hp)[0];
+  const threat = state.dungeon.preset.monster ? state.dungeon.preset.monster.threat : 'none';
+  if (threat === 'burst') {
+    // 連撃：全員に配分（壁がいれば軽減）。壁欠けの深層は事故りやすい。
+    const roles = partyRoles(state, party);
+    const mit = roles.has('tank') ? 0.6 : 1.0;
+    for (const m of members) {
+      m.hp -= dmg * 0.55 * mit;
+      m.morale = Math.max(0, m.morale - 0.05);
+      if (m.hp <= 0) killMember(state, m, depth);
+    }
+    return;
   }
+  let taker = members.find((m) => classOf(m.classId).role === 'tank');
+  if (!taker) taker = members.slice().sort((a, b) => a.hp - b.hp)[0];
   taker.hp -= dmg;
   taker.morale = Math.max(0, taker.morale - 0.06);
   for (const m of members) if (m !== taker) m.morale = Math.max(0, m.morale - 0.02);
-  if (taker.hp <= 0) {
-    taker.alive = false;
-    taker.partyId = null;
-    state.stats.deaths++;
-    state.gauges.reputation = Math.max(0, state.gauges.reputation - 0.015);
-    logEvent(state, `${taker.name}(${classOf(taker.classId).label} Lv${taker.level.toFixed(0)}) が F${depth} で死亡`);
-  }
+  if (taker.hp <= 0) killMember(state, taker, depth);
 }
 
-function updateGauges(state, memberDelves, aliveCount) {
-  // 循環：潜行に参加している人口の割合（活動量）を平滑化
-  const activity = aliveCount > 0 ? Math.min(1, memberDelves / aliveCount) : 0;
-  const k = CONFIG.gauges.fluxSmoothing;
-  state.gauges.flux = state.gauges.flux * (1 - k) + activity * k;
+function killMember(state, m, depth) {
+  if (!m.alive) return;
+  m.alive = false;
+  m.partyId = null;
+  state.stats.deaths++;
+  state.gauges.reputation = Math.max(0, state.gauges.reputation - 0.03);
+  logEvent(state, `${m.name}(${classOf(m.classId).label} Lv${m.level.toFixed(0)}) が F${depth} で死亡`);
+}
 
-  // 攻略進捗：先頭パーティ（最深到達）/ floors
+// 攻略進捗のみ毎tick更新（循環・評判は日次で settleDaily が扱う）。
+function updateClear(state) {
   let deepest = 0;
   for (const p of state.parties.list) {
     if (p.alive && p.floor > deepest) deepest = p.floor;
   }
   state.gauges.clear = (deepest / state.dungeon.floors) * 100;
-
-  // 評判：活動が続けば緩やかに回復
-  state.gauges.reputation = Math.min(1, state.gauges.reputation + memberDelves * 0.0004);
 }

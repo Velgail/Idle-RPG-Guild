@@ -25,7 +25,7 @@ export const CONFIG = {
   // upkeep: そのプリセットを維持する魔王への循環維持コスト/日（深層強化は高い）。
   presets: {
     normal: { id: 'normal', label: '通常', diffBase: 1.0, deepBias: 0.0, reward: 1.0, upkeep: 4, monster: { resist: 'none', threat: 'none' } },
-    deepen: { id: 'deepen', label: '深層強化', diffBase: 1.0, deepBias: 1.3, reward: 1.1, upkeep: 16, monster: { resist: 'phys', threat: 'burst' } },
+    deepen: { id: 'deepen', label: '深層強化', diffBase: 1.28, deepBias: 1.3, reward: 1.1, upkeep: 16, monster: { resist: 'phys', threat: 'burst' } },
     ease: { id: 'ease', label: '緩和・誘引', diffBase: 0.75, deepBias: 0.0, reward: 1.25, upkeep: 7, monster: { resist: 'none', threat: 'none' } },
   },
 
@@ -53,10 +53,12 @@ export const CONFIG = {
   },
 
   gauges: {
-    fluxFloor: 0.15, // 循環がこれを下回る日が続くと停滞破局
-    fluxStagnantDays: 4,
-    fluxSmoothing: 0.15, // 循環（活動量）の指数平滑係数
-    reputationStart: 0.5, // 0..1 マクロ評判（旨味）
+    fluxFloor: 0.35, // 循環がこれを下回る日が続くと停滞破局
+    fluxStagnantDays: 5,
+    fluxDailySmoothing: 0.4, // 日次の循環平滑
+    expectedParties: 6, // 健全なパーティ数の目安（循環の分母＝人口崩壊も拾う）
+    reputationStart: 0.6, // 0..1 マクロ評判（旨味）
+    reputationDecayPerDay: 0.006, // 旨味の緩い日次減衰（戦死で大きく落ちる）
   },
 
   summon: {

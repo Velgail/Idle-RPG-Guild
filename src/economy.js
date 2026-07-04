@@ -24,6 +24,17 @@ export function settleDaily(state) {
   state.economy.lastDayNet = -expense; // 収入はtick計上、ここでは支出のみ差引
   state.economy.treasury -= expense;
 
+  // --- 循環 Flux（日次）：先頭で衝突しているか＝今日フロンティアに挑めたパーティの割合 ---
+  // deepen で壁になると先頭が farm に留まり flux↓（過剰抑制は停滞破局を招く）。
+  const active = state.parties.list.filter((p) => p.alive);
+  const advanced = active.filter((p) => p.advancedToday).length;
+  const g = CONFIG.gauges;
+  const dailyActivity = Math.min(1, advanced / Math.max(g.expectedParties, 1));
+  state.gauges.flux = state.gauges.flux * (1 - g.fluxDailySmoothing) + dailyActivity * g.fluxDailySmoothing;
+
+  // --- 評判（日次減衰）：戦死や停滞で旨味が忘れられていく ---
+  state.gauges.reputation = Math.max(0, state.gauges.reputation - g.reputationDecayPerDay);
+
   // 破産ストリーク
   if (state.economy.treasury < e.bankruptFloor) {
     state.economy.bankruptStreak++;
