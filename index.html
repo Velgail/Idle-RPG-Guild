@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>勇者と魔王はダンジョン経営をマッチポンプする — prototype</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <h1>ダンジョン経営マッチポンプ</h1>
+      <span class="sub">縦切りプロトタイプ v0.2</span>
+      <span class="spacer"></span>
+      <div class="controls" id="controls">
+        <button id="btnPlay">▶ 再生</button>
+        <button data-speed="1" class="active">1x</button>
+        <button data-speed="2">2x</button>
+        <button data-speed="4">4x</button>
+        <button id="btnReset">⟲ リセット</button>
+      </div>
+    </header>
+
+    <div class="grid" id="app"></div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="modal" id="modal">
+      <h2 id="modalTitle"></h2>
+      <p id="modalBody"></p>
+      <button id="modalBtn"></button>
+      <div class="hint" id="modalHint"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
