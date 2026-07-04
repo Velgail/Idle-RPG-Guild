@@ -6,15 +6,15 @@ import { CLASS_IDS, classOf } from './classes.js';
 const NAME_A = ['アル', 'ベル', 'カイ', 'ドラ', 'エル', 'フィ', 'グレ', 'ハル', 'イリ', 'ジン', 'クロ', 'レン', 'ミナ', 'ノア', 'オル', 'ピア'];
 const NAME_B = ['ド', 'ン', 'ヴァ', 'ス', 'ク', 'ミ', 'ル', 'ト', 'ア', 'ゼ', 'グ', 'リ'];
 
-export function makeAdventurer(rng, id) {
+export function makeAdventurer(rng, id, level = CONFIG.population.startLevel) {
   const classId = pick(rng, CLASS_IDS);
   const cls = classOf(classId);
-  const maxHp = Math.round(CONFIG.population.startHp * cls.hpMul);
+  const maxHp = Math.round(CONFIG.population.startHp * cls.hpMul * (1 + (level - 1) * 0.1));
   return {
     id,
     name: pick(rng, NAME_A) + pick(rng, NAME_B),
     classId,
-    level: CONFIG.population.startLevel,
+    level,
     hp: maxHp,
     maxHp,
     morale: 0.6, // 0..1

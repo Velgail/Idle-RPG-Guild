@@ -22,9 +22,10 @@ export function simTick(state) {
   const aliveCount = countAliveAll(state);
   const capFactor = Math.max(0, 1 - aliveCount / CONFIG.population.softCap);
   pop.inflowAccum += CONFIG.population.inflowBase * (0.4 + state.gauges.reputation) * capFactor;
+  const inflowLevel = CONFIG.population.startLevel + state.time.day * CONFIG.population.inflowLevelCreep;
   while (pop.inflowAccum >= 1) {
     pop.inflowAccum -= 1;
-    pop.adventurers.push(makeAdventurer(rng, pop.nextId++));
+    pop.adventurers.push(makeAdventurer(rng, pop.nextId++, inflowLevel));
     state.stats.inflow++;
   }
 
@@ -42,7 +43,8 @@ export function simTick(state) {
 
     const power = partyPower(state, party);
     const target = party.floor + 1;
-    const canPush = target <= floors && power >= effectiveDifficulty(state, party, target);
+    // 遠征は時間がかかる：1日に前進できるのは1フロアまで（制御が追いつく速度に律速）。
+    const canPush = !party.advancedToday && target <= floors && power >= effectiveDifficulty(state, party, target);
 
     memberDelves += members.length;
     state.stats.delves++;
@@ -51,8 +53,9 @@ export function simTick(state) {
     if (canPush) {
       const effDiff = effectiveDifficulty(state, party, target);
       if (power * roll >= effDiff) {
-        // 前進成功
+        // 前進成功（この日はもう前進しない＝残りは踏破フロアで稼ぐ）
         party.floor = target;
+        party.advancedToday = true;
         const reward = (1.5 + target * 1.2) * state.dungeon.preset.reward;
         fee += reward * CONFIG.economy.feeRate;
         const share = reward / members.length;

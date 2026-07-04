@@ -13,8 +13,15 @@ export function accrueTickIncome(state, fee) {
 // 1日1回：支出（人件費・魔王コスト）を引き、破局判定を進める
 export function settleDaily(state) {
   const e = CONFIG.economy;
-  const demonUpkeep = e.demonUpkeepPerDay + (state.gauges.clear / 100) * e.demonUpkeepPerClear * state.dungeon.floors;
-  const expense = e.secretarySalaryPerDay + demonUpkeep;
+  const nParties = state.parties.list.filter((p) => p.alive).length;
+  const secretary = e.secretarySalaryBase + e.secretarySalaryPerParty * nParties;
+  // 循環維持コスト：現在プリセットの upkeep（深層強化は高い）＋攻略進捗比例＋逓増クロック
+  const demonUpkeep =
+    (state.dungeon.preset.upkeep || 0) +
+    e.demonUpkeepPerClear * state.gauges.clear +
+    e.demonUpkeepGrowthPerDay * state.time.day;
+  const expense = secretary + demonUpkeep;
+  state.economy.lastDayNet = -expense; // 収入はtick計上、ここでは支出のみ差引
   state.economy.treasury -= expense;
 
   // 破産ストリーク

@@ -16,6 +16,7 @@ function dailyPartyPhase(state) {
     if (party.floor > party.floorAtDayStart) party.stallDays = 0;
     else party.stallDays++;
     party.floorAtDayStart = party.floor;
+    party.advancedToday = false; // 新しい日：前進枠をリセット
   }
   // 停滞パーティの自発転職（D-32）
   for (const party of state.parties.list) {

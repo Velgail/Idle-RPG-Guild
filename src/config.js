@@ -15,14 +15,18 @@ export const CONFIG = {
     inflowBase: 0.35, // 1tick あたりの基本流入期待値（評判で増減）
     startLevel: 1,
     startHp: 20,
+    // エントロピー漸増(D-07)：新規冒険者が日々わずかに強く来る（熟練の伝播）。
+    // 静的マニュアルはいずれ追いつけなくなる → 手直しが要る。
+    inflowLevelCreep: 0.06, // 新規Lv = startLevel + 経過日 × これ
   },
 
   // ダンジョン挙動プリセット（魔王の応答表が指すもの）
   // monster: 魔王のモンスター構成ノブ(D-13)。resist=半減属性 / threat=脅威型(burst 要壁 / status 要回復)
+  // upkeep: そのプリセットを維持する魔王への循環維持コスト/日（深層強化は高い）。
   presets: {
-    normal: { id: 'normal', label: '通常', diffBase: 1.0, deepBias: 0.0, reward: 1.0, monster: { resist: 'none', threat: 'none' } },
-    deepen: { id: 'deepen', label: '深層強化', diffBase: 1.0, deepBias: 1.2, reward: 1.1, monster: { resist: 'phys', threat: 'burst' } },
-    ease: { id: 'ease', label: '緩和・誘引', diffBase: 0.75, deepBias: 0.0, reward: 1.25, monster: { resist: 'none', threat: 'none' } },
+    normal: { id: 'normal', label: '通常', diffBase: 1.0, deepBias: 0.0, reward: 1.0, upkeep: 4, monster: { resist: 'none', threat: 'none' } },
+    deepen: { id: 'deepen', label: '深層強化', diffBase: 1.0, deepBias: 1.3, reward: 1.1, upkeep: 16, monster: { resist: 'phys', threat: 'burst' } },
+    ease: { id: 'ease', label: '緩和・誘引', diffBase: 0.75, deepBias: 0.0, reward: 1.25, upkeep: 7, monster: { resist: 'none', threat: 'none' } },
   },
 
   party: {
@@ -35,13 +39,16 @@ export const CONFIG = {
   },
 
   economy: {
-    feeRate: 0.2, // 冒険者の稼ぎへのギルド手数料
-    townConsumePerCapita: 0.05, // 1tick 1人あたりの街の消費（ギルド関連）
-    secretarySalaryPerDay: 8, // 秘書の人件費 / 日
-    demonUpkeepPerDay: 5, // 魔王への循環維持コスト / 日（固定分）
-    demonUpkeepPerClear: 0.2, // 攻略進捗に比例する循環維持コスト / 日
+    feeRate: 0.16, // 冒険者の稼ぎへのギルド手数料
+    townConsumePerCapita: 0.04, // 1tick 1人あたりの街の消費（ギルド関連）
+    secretarySalaryBase: 5, // 秘書の人件費 / 日（基本）
+    secretarySalaryPerParty: 1.2, // パーティ数に比例する運営費 / 日
+    demonUpkeepPerClear: 0.6, // 攻略進捗に比例する循環維持コスト / 日
+    // 終端クロック(D-07)：世界が拡大するほど循環維持コストが逓増。いずれ収入を追い越す。
+    // 効率の良い経営（人口/攻略を締め、利潤率を保つ）ほど破産を遅らせる＝スコア。
+    demonUpkeepGrowthPerDay: 0.5,
     startTreasury: 80,
-    bankruptFloor: -40, // これを下回る日が続くと破産
+    bankruptFloor: -50, // これを下回る日が続くと破産
     bankruptDays: 3,
   },
 
