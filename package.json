@@ -6,5 +6,8 @@
   "description": "勇者と魔王はダンジョン経営をマッチポンプする — 縦切りプロトタイプ (build-less static web app)",
   "scripts": {
     "test": "node test/headless.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.61.1"
   }
 }
